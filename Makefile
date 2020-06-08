@@ -10,6 +10,8 @@ SPE_DIR=specimen/
 SPE_TAR_DIR=specimen/bin/
 SPE_TAR=spe_no_ssp
 
+MAKE_CFG=triton/bin/make_cfg
+
 ARG=binary
 FNO=-fno-stack-protector
 
@@ -23,17 +25,26 @@ profiler: profiler/makefile profiler/makefile.rules profiler/profiler.cpp
 return_address_violation: specimen/return_address_violation.c
 	gcc -Wall -g -o $(SPE_TAR_DIR)$(SPE_TAR) $(SPE_DIR)return_address_violation.c $(FNO)
 
+test: profiler/obj-intel64/profiler.so specimen/bin/spe_no_ssp
+	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so -- $(CURRENT_DIR)$(SPE_TAR_DIR)$(SPE_TAR) $(ARG)
+
+##########################  for making symbol_table ############################
 symbol_table: symbol_table/symbol_table.cpp
 	g++ -Wall -o symbol_table/bin/symbol_table symbol_table/symbol_table.cpp
 
 symbol_table_test: symbol_table/bin/symbol_table
 	./symbol_table/bin/symbol_table
+################################################################################
+
+####################### for testing overwrite specimen #########################
+return_address_violation_overwrite: specimen/return_address_violation_overwrite.c
+	gcc -Wall -g -o $(SPE_TAR_DIR)$@ $(SPE_DIR)$@.c $(FNO)
+
+cfg_overwrite: specimen/bin/return_address_violation_overwrite
+	./$(MAKE_CFG) $^ map/overwrite.map 0x4006e7 0x40073e cfg/overwrite.txt
 
 test_overwrite: profiler/obj-intel64/profiler.so
-	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so -- $(CURRENT_DIR)$(SPE_TAR_DIR)spe_no_ssp_overwrite $(ARG)
-
-test: profiler/obj-intel64/profiler.so specimen/bin/spe_no_ssp
-	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so -- $(CURRENT_DIR)$(SPE_TAR_DIR)$(SPE_TAR) $(ARG)
+	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so -- $(SPE_TAR_DIR)return_address_violation_overwrite $(ARG)
 
 clean:
 	cd profiler && rm -rf obj-intel64
