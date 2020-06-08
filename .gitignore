@@ -1,10 +1,12 @@
+cfg/*.txt
+
 code_sample
 
 profiler/obj-intel64
 profiler/profiler_ori.cpp
 
-specimen/bin
-symbol_table/bin
+specimen/bin/*
+symbol_table/bin/*
 
 triton/bin/*
 triton/*.txt
