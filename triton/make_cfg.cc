@@ -199,8 +199,8 @@ main(int argc, char *argv[])
   std::vector<triton::arch::registers_e> symregs;
   std::vector<uint64_t> symmem;
 
-  if(argc < 5) {
-    printf("Usage: %s <binary> <sym-config> <entry> <end>\n", argv[0]);
+  if(argc < 6) {
+    printf("Usage: %s <binary> <sym-config> <entry> <end> <output>\n", argv[0]);
     return 1;
   }
 
@@ -219,7 +219,6 @@ main(int argc, char *argv[])
 
   while(input_index < input_regs.size() && input_index < input_mems.size()){
     api.clearPathConstraints ();
-    // // clear_branch_constraints ();
     api.concretizeAllRegister ();
     api.concretizeAllMemory ();
 
@@ -250,7 +249,7 @@ main(int argc, char *argv[])
 
   unload_binary(&bin);
 
-  export_cfg("cfg.txt");
+  export_cfg(argv[5]);
 
   return 0;
 }

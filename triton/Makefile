@@ -26,7 +26,7 @@ cfg_testcode: cfg_testcode.c
 	$(CC) -g -o $(BIN_DIR)cfg_testcode cfg_testcode.c
 
 test:
-	./$(BIN_DIR)make_cfg $(BIN_DIR)cfg_testcode cfg_testcode.map 0x400608 0x400638
+	./$(BIN_DIR)make_cfg $(BIN_DIR)cfg_testcode cfg_testcode.map 0x400608 0x400638 cfg_test.txt
 
 clean:
 	rm -f bin/*
