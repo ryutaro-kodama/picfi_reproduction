@@ -21,8 +21,6 @@
 #include <triton/api.hpp>
 #include <triton/x86Specifications.hpp>
 
-triton::API api;
-triton::arch::registers_e ip;
 
 std::multimap<uint64_t, uint64_t> cfg;
 
@@ -51,73 +49,25 @@ int set_triton_arch(Binary &bin, triton::API &api, triton::arch::registers_e &ip
   return 0;
 }
 
-void set_new_input(Section *sec, size_t base)
-{
-  triton::ast::AstContext &ast = api.getAstContext();
-  triton::ast::AbstractNode *constraint_list = ast.equal(ast.bvtrue(), ast.bvtrue());
-
-  std::vector<bool> bool_list;
-
-  const std::vector<triton::engines::symbolic::PathConstraint> &path_constraints = api.getPathConstraints();
-  size_t height = -1;
-  for(auto &pc: path_constraints) {
-    if(!pc.isMultipleBranches()) continue;
-    height++;
-    if(height < base) continue;
-    triton::ast::AbstractNode *true_constraint = ast.equal(ast.bvtrue(), ast.bvtrue());
-    for(auto &branch_constraint: pc.getBranchConstraints()) {
-      bool flag         = std::get<0>(branch_constraint);
-      triton::ast::AbstractNode *constraint = std::get<3>(branch_constraint);
-
-      bool_list.push_back(flag);
-
-      if(flag) {
-        // 現在通るやつ->そのまま
-        true_constraint = constraint;
-      } else {
-        // 現在通らないやつ->そのinputを求める
-        triton::ast::AbstractNode *current_constraint_list = ast.land(constraint_list, constraint);
-
-        std::map<triton::arch::registers_e, uint64_t> new_input_reg;
-        std::map<uint64_t, uint8_t> new_input_mem;
-        triton::arch::registers_e triton_regnum;
-        for(auto &kv: api.getModel(current_constraint_list)) {
-          printf("      SymVar %u (%s) = 0x%jx\n", 
-                  kv.first, 
-                  api.getSymbolicVariableFromId(kv.first)->getComment().c_str(), 
-                  (uint64_t)kv.second.getValue());
-          // new_inputs.push_back((uint64_t)kv.second.getValue());
-          const char *key = api.getSymbolicVariableFromId(kv.first)->getComment().c_str();
-
-          triton_regnum = get_triton_regnum(key);
-          if(triton_regnum == triton::arch::ID_REG_INVALID) {
-            // uint64_t address = //api.getSymbolicVariableFromId(kv.first)->getComment()
-            // new_input_reg[address] = (uint8_t)kv.second.getValue();
-          } else {
-            new_input_reg[triton_regnum] = (uint64_t)kv.second.getValue();
-          }
-          // printf("[%d]番目スタート[0x%jx]の値を追加\n", height+1, (uint64_t)kv.second.getValue());
-        }
-        input_regs.push_back(new_input_reg);
-        input_mems.push_back(new_input_mem);
-        calc_model_bases.push_back(height+1);
-      }
+void concretize_and_symbolize(triton::API &api,
+                             std::map<triton::arch::registers_e, uint64_t> input_reg,
+                             std::map<uint64_t, uint8_t> input_mem,
+                             std::vector<triton::arch::registers_e> symreg,
+                             std::vector<uint64_t> symmem){
+    for(auto &kv: input_reg) {
+      triton::arch::Register r = api.getRegister(kv.first);
+      api.setConcreteRegisterValue(r, kv.second);
     }
-    constraint_list = ast.land(constraint_list, true_constraint);
-  }
-}
-
-void print_cfg(){
-    uint64_t branch_address, target_address;
-    std::multimap<uint64_t, uint64_t>::iterator i;
-
-    printf("******* CFG *******\n");
-    for(i = cfg.begin(); i != cfg.end(); i++) {
-        branch_address = i->first;
-        target_address = i->second;
-        printf("branch:[%llx] -> target:[%llx]\n", branch_address, target_address);
+    for(auto regid: symreg) {
+      triton::arch::Register r = api.getRegister(regid);
+      api.convertRegisterToSymbolicVariable(r)->setComment(r.getName());
     }
-    printf("******* CFG END *******\n");
+    for(auto &kv: input_mem) {
+      api.setConcreteMemoryValue(kv.first, kv.second);
+    }
+    for(auto memaddr: symmem) {
+      api.convertMemoryToSymbolicVariable(triton::arch::MemoryAccess(memaddr, 1))->setComment(std::to_string(memaddr));
+    }
 }
 
 bool is_new_cf(uint64_t branch_address, uint64_t target_address){
@@ -125,8 +75,10 @@ bool is_new_cf(uint64_t branch_address, uint64_t target_address){
   return true;
 }
 
-int emulation(Section *sec, uint64_t pc, uint64_t end_address){
+int emulation(triton::API &api, triton::arch::registers_e &ip, Section *sec,
+              uint64_t entry_address, uint64_t end_address){
   bool cf_flag = false;
+  uint64_t pc = entry_address;
   uint64_t branch_address;
 
   while(sec->contains(pc)) {
@@ -140,9 +92,10 @@ int emulation(Section *sec, uint64_t pc, uint64_t end_address){
 
     // jump先がライブラリなどだったら保留
     if(strncmp(mnemonic, "call", 4)==0){
-      uint64_t jump_pc = strtoul(operands, NULL, 0);
-      if(!sec->contains(jump_pc)){
+      uint64_t call_target = strtoul(operands, NULL, 0);
+      if(!sec->contains(call_target)){
         pc = insn.getNextAddress();
+        cf_flag = false;
         continue;
       }
     }
@@ -171,9 +124,75 @@ int emulation(Section *sec, uint64_t pc, uint64_t end_address){
     pc = (uint64_t)api.getConcreteRegisterValue(api.getRegister(ip));
   }
 
-
-  // printf("emulation終了\n");
   return 0;
+}
+
+void set_new_input(triton::API &api, Section *sec, size_t base)
+{
+  triton::ast::AstContext &ast = api.getAstContext();
+  triton::ast::AbstractNode *constraint_list = ast.equal(ast.bvtrue(), ast.bvtrue());
+
+  std::vector<bool> bool_list;
+
+  const std::vector<triton::engines::symbolic::PathConstraint> &path_constraints = api.getPathConstraints();
+  size_t height = -1;
+  for(auto &pc: path_constraints) {
+    if(!pc.isMultipleBranches()) continue;
+    height++;
+    if(height < base) continue;
+    triton::ast::AbstractNode *true_constraint = ast.equal(ast.bvtrue(), ast.bvtrue());
+    for(auto &branch_constraint: pc.getBranchConstraints()) {
+      bool flag         = std::get<0>(branch_constraint);
+      triton::ast::AbstractNode *constraint = std::get<3>(branch_constraint);
+
+      bool_list.push_back(flag);
+
+      if(flag) {
+        // 現在通るやつ->そのまま
+        true_constraint = constraint;
+      } else {
+        // 現在通らないやつ->そのinputを求める
+        triton::ast::AbstractNode *current_constraint_list = ast.land(constraint_list, constraint);
+
+        std::map<triton::arch::registers_e, uint64_t> new_input_reg;
+        std::map<uint64_t, uint8_t> new_input_mem;
+        // triton::arch::registers_e triton_regnum;
+        for(auto &kv: api.getModel(current_constraint_list)) {
+          printf("      SymVar %u (%s) = 0x%jx\n",
+                  kv.first,
+                  api.getSymbolicVariableFromId(kv.first)->getComment().c_str(),
+                  (uint64_t)kv.second.getValue());
+          const char *sym = api.getSymbolicVariableFromId(kv.first)->getComment().c_str();
+
+          triton::arch::registers_e regnum = get_triton_regnum(sym);
+          if(regnum == triton::arch::ID_REG_INVALID) {
+            // uint64_t address = //api.getSymbolicVariableFromId(kv.first)->getComment()
+            // new_input_reg[address] = (uint8_t)kv.second.getValue();
+          } else {
+            new_input_reg[regnum] = (uint64_t)kv.second.getValue();
+          }
+          // printf("[%d]番目スタート[0x%jx]の値を追加\n", height+1, (uint64_t)kv.second.getValue());
+        }
+        input_regs.push_back(new_input_reg);
+        input_mems.push_back(new_input_mem);
+        calc_model_bases.push_back(height+1);
+      }
+    }
+    constraint_list = ast.land(constraint_list, true_constraint);
+  }
+}
+
+void print_cfg(){
+    uint64_t branch_address, target_address;
+    std::multimap<uint64_t, uint64_t>::iterator i;
+
+    printf("******* CFG *******\n");
+    for(i = cfg.begin(); i != cfg.end(); i++) {
+        branch_address = i->first;
+        target_address = i->second;
+        printf("branch:[%llx] -> target:[%llx]\n", branch_address, target_address);
+    }
+    printf("******* CFG END *******\n");
 }
 
 void export_cfg(const char* filename){
@@ -191,13 +210,16 @@ void export_cfg(const char* filename){
 int
 main(int argc, char *argv[])
 {
+  triton::API api;
+  triton::arch::registers_e ip;
   Binary bin;
-  std::map<triton::arch::registers_e, uint64_t> first_input_regs;
-  std::map<uint64_t, uint8_t> first_input_mems;
-  size_t input_index = 0;
 
   std::vector<triton::arch::registers_e> symregs;
   std::vector<uint64_t> symmem;
+
+  std::map<triton::arch::registers_e, uint64_t> first_input_reg;
+  std::map<uint64_t, uint8_t> first_input_mem;
+  size_t input_index = 0;
 
   if(argc < 6) {
     printf("Usage: %s <binary> <sym-config> <entry> <end> <output>\n", argv[0]);
@@ -210,38 +232,22 @@ main(int argc, char *argv[])
   if(set_triton_arch(bin, api, ip) < 0) return 1;
   api.enableMode(triton::modes::ALIGNED_MEMORY, true);
 
-  if(parse_sym_config(argv[2], &first_input_regs, &first_input_mems, &symregs, &symmem) < 0) return 1;
-  input_regs.push_back(first_input_regs);
-  input_mems.push_back(first_input_mems);
+  if(parse_sym_config(argv[2], &first_input_reg, &first_input_mem, &symregs, &symmem) < 0) return 1;
+  input_regs.push_back(first_input_reg);
+  input_mems.push_back(first_input_mem);
   calc_model_bases.push_back(0);
 
   Section *sec = bin.get_text_section();
 
   while(input_index < input_regs.size() && input_index < input_mems.size()){
     api.clearPathConstraints ();
-    api.concretizeAllRegister ();
-    api.concretizeAllMemory ();
 
-    for(auto &kv: input_regs[input_index]) {
-      triton::arch::Register r = api.getRegister(kv.first);
-      api.setConcreteRegisterValue(r, kv.second);
-    }
-    for(auto regid: symregs) {
-      triton::arch::Register r = api.getRegister(regid);
-      api.convertRegisterToSymbolicVariable(r)->setComment(r.getName());
-    }
-    for(auto &kv: input_mems[input_index]) {
-      api.setConcreteMemoryValue(kv.first, kv.second);
-    }
-    for(auto memaddr: symmem) {
-      api.convertMemoryToSymbolicVariable(triton::arch::MemoryAccess(memaddr, 1))->setComment(std::to_string(memaddr));
-    }
+    concretize_and_symbolize(api, input_regs[input_index], input_mems[input_index],
+                             symregs, symmem);
 
-    // printf("emulation開始\n");
-    emulation(sec, strtoul(argv[3], NULL, 0), strtoul(argv[4], NULL, 0));
-    // printf("emulation終了\n");
+    emulation(api, ip, sec, strtoul(argv[3], NULL, 0), strtoul(argv[4], NULL, 0));
 
-    set_new_input(sec, calc_model_bases[input_index]);
+    set_new_input(api, sec, calc_model_bases[input_index]);
     print_cfg();
 
     input_index++;
