@@ -26,7 +26,7 @@ std::multimap<uint64_t, uint64_t> cfg;
 
 std::vector<std::map<triton::arch::registers_e, uint64_t>> input_regs;
 std::vector<std::map<uint64_t, uint8_t>> input_mems;
-std::vector<size_t> calc_model_bases;
+std::vector<int> calc_model_bases;
 
 int set_triton_arch(Binary &bin, triton::API &api, triton::arch::registers_e &ip)
 {
@@ -127,7 +127,7 @@ int emulation(triton::API &api, triton::arch::registers_e &ip, Section *sec,
   return 0;
 }
 
-void set_new_input(triton::API &api, Section *sec, size_t base)
+void set_new_input(triton::API &api, Section *sec, int base)
 {
   triton::ast::AstContext &ast = api.getAstContext();
   triton::ast::AbstractNode *constraint_list = ast.equal(ast.bvtrue(), ast.bvtrue());
@@ -135,7 +135,7 @@ void set_new_input(triton::API &api, Section *sec, size_t base)
   std::vector<bool> bool_list;
 
   const std::vector<triton::engines::symbolic::PathConstraint> &path_constraints = api.getPathConstraints();
-  size_t height = -1;
+  int height = -1;
   for(auto &pc: path_constraints) {
     if(!pc.isMultipleBranches()) continue;
     height++;
