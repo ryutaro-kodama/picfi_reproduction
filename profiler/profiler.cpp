@@ -286,7 +286,7 @@ main(int argc, char *argv[])
   }
 
   get_symbol_table(argv[6]);
-  if(get_scfg("cfg/overwrite.txt")) return 1;
+  if(get_scfg("cfg/printf.txt")) return 1;
 
   // IMG_AddInstrumentFunction(parse_funcsyms, NULL);
   INS_AddInstrumentFunction(instrument_insn, NULL);
