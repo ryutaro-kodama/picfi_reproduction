@@ -6,6 +6,7 @@
 #include "pin.H"
 
 #include <vector>
+#include <fstream>
 
 // symbol_table作成関連
 #include <unistd.h>
@@ -18,7 +19,10 @@
 
 // std::map<UINT32, ADDRINT> ecfg;
 std::vector<ADDRINT> return_address_array;
+
 std::map<std::string, std::string> symbol_table;
+std::map<size_t, std::string> branch_table;
+std::map<size_t, std::pair<std::string, size_t> > target_table;
 
 // void printMovingAddress(ADDRINT src_addr, ADDRINT target_address){
 //   fprintf(stderr, "0x%08jx -> 0x%08jx\n", src_addr, target_address);
@@ -191,6 +195,32 @@ get_symbol_table(char* binaryname){
     close(backup_stdin);
 }
 
+static int
+get_scfg(const char* cfg_filename){
+  size_t id = 1;
+
+  std::ifstream reading_file;
+  reading_file.open(cfg_filename, std::ios::in);
+  if(reading_file.fail()) return 1;
+
+  // Read from cfg-file per line
+  std::string reading_line_buffer;
+  while( std::getline(reading_file, reading_line_buffer)){
+    std::string branch_address, target_address;
+    std::stringstream ss;
+    ss << reading_line_buffer;
+    std::getline(ss, branch_address, ',');
+    std::getline(ss, target_address);
+
+    // Set values to each table
+    branch_table[id] = branch_address;
+    target_table[id] = std::make_pair(target_address, 0);
+    id++;
+  }
+
+  return 0;
+}
+
 // static void
 // print_results(INT32 code, void *v)
 // {
@@ -221,6 +251,31 @@ print_table(INT32 code, void *v){
     printf("******* SYMBOL TABLE END *******\n");
 }
 
+static void
+print_cfg(INT32 code, void *v){
+  std::map<size_t, std::string>::iterator i;
+  std::map<size_t, std::pair<std::string, size_t> >::iterator j;
+  size_t id, flag;
+  std::string address;
+
+  printf("******* BRANCH TABLE *******\n");
+  for(i = branch_table.begin(); i != branch_table.end(); i++) {
+      id = i->first;
+      address = i->second;
+      printf("id:[%zu] --- address:[%s]\n", id, address.c_str());
+  }
+  printf("******* BRANCH TABLE END *******\n");
+
+  printf("******* TARGET TABLE *******\n");
+  for(j = target_table.begin(); j != target_table.end(); j++) {
+      id = j->first;
+      address = j->second.first;
+      flag = j->second.second;
+      printf("id:[%zu] --- address:[%s] --- flag[%zu]\n", id, address.c_str(), flag);
+  }
+  printf("******* TARGET TABLE END *******\n");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -231,6 +286,7 @@ main(int argc, char *argv[])
   }
 
   get_symbol_table(argv[6]);
+  if(get_scfg("cfg/overwrite.txt")) return 1;
 
   // IMG_AddInstrumentFunction(parse_funcsyms, NULL);
   INS_AddInstrumentFunction(instrument_insn, NULL);
@@ -239,6 +295,7 @@ main(int argc, char *argv[])
   //   PIN_AddSyscallEntryFunction(log_syscall, NULL);
   // }
   PIN_AddFiniFunction(print_table, NULL);
+  PIN_AddFiniFunction(print_cfg, NULL);
 
   /* Never returns */
   PIN_StartProgram();
