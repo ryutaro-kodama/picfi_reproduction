@@ -20,9 +20,9 @@
 // std::map<UINT32, ADDRINT> ecfg;
 std::vector<ADDRINT> return_address_array;
 
-std::map<std::string, std::string> symbol_table;
-std::map<size_t, std::string> branch_table;
-std::map<size_t, std::pair<std::string, size_t> > target_table;
+std::map<ADDRINT, std::string> symbol_table;
+std::map<size_t, ADDRINT> branch_table;
+std::map<size_t, std::pair<ADDRINT, size_t> > target_table;
 
 // void printMovingAddress(ADDRINT src_addr, ADDRINT target_address){
 //   fprintf(stderr, "0x%08jx -> 0x%08jx\n", src_addr, target_address);
@@ -41,6 +41,23 @@ std::map<size_t, std::pair<std::string, size_t> > target_table;
 static void
 activate_address(ADDRINT target_address){
   return_address_array.push_back(target_address);
+
+  // std::map<size_t, std::string>::iterator i;
+  // std::vector<size_t> tmp_id;
+  // for(i=branch_table.begin(); i!=branch_table.end(); i++){
+  //   if(i->second==branch_address) tmp_id.push_back(i->first);
+  // }
+
+  // std::vector<size_t>::j;
+  // for(j=tmp_id.begin(); j!=tmp_id.end(); j++){
+  //   if(target_table[j].first==target_address){
+  //     target_table[j].second = 1;
+  //     return 0;
+  //   }
+  // }
+
+  // // End roop means this ControlFrow isn't in table.
+  // detect_violation();
 }
 
 static void
@@ -48,9 +65,8 @@ activate_return_address(ADDRINT IARG_RETURN_IP){
   activate_address(IARG_RETURN_IP);
 }
 
-// ADDRINT patchstub_at_address = ~~~;
 // static void
-// judge_patchstub_at(ADDRINT IARG_BRANCH_TARGET_ADDR){
+// activatefunction_address(ADDRINT IARG_BRANCH_TARGET_ADDR){
 //   if(patchstub_at_address!=IARG_BRANCH_TARGET_ADDR) return;
 //
 //   slackでもらったpatchstub_atの処理により、target_addressを引き抜く
@@ -187,7 +203,7 @@ get_symbol_table(char* binaryname){
         getline(ss, label, ' ');
         getline(ss, label, ' ');
 
-        symbol_table[address] = label;
+        symbol_table[AddrintFromString(address)] = label;
     }
     // wait(NULL);
 
@@ -213,8 +229,8 @@ get_scfg(const char* cfg_filename){
     std::getline(ss, target_address);
 
     // Set values to each table
-    branch_table[id] = branch_address;
-    target_table[id] = std::make_pair(target_address, 0);
+    branch_table[id] = Uint64FromString(branch_address);
+    target_table[id] = std::make_pair(Uint64FromString(target_address), 0);
     id++;
   }
 
@@ -239,30 +255,31 @@ get_scfg(const char* cfg_filename){
 
 static void
 print_table(INT32 code, void *v){
-    std::string address, label;
-    std::map<std::string, std::string>::iterator i;
+    ADDRINT address;
+    std::string label;
+    std::map<ADDRINT, std::string>::iterator i;
 
     printf("******* SYMBOL TABLE *******\n");
     for(i = symbol_table.begin(); i != symbol_table.end(); i++) {
         address = i->first;
         label = i->second;
-        printf("address:[%s] -> label:[%s]\n", address.c_str(), label.c_str());
+        printf("address:[%08jx] -> label:[%s]\n", address, label.c_str());
     }
     printf("******* SYMBOL TABLE END *******\n");
 }
 
 static void
 print_cfg(INT32 code, void *v){
-  std::map<size_t, std::string>::iterator i;
-  std::map<size_t, std::pair<std::string, size_t> >::iterator j;
+  std::map<size_t, ADDRINT>::iterator i;
+  std::map<size_t, std::pair<ADDRINT, size_t> >::iterator j;
   size_t id, flag;
-  std::string address;
+  ADDRINT address;
 
   printf("******* BRANCH TABLE *******\n");
   for(i = branch_table.begin(); i != branch_table.end(); i++) {
       id = i->first;
       address = i->second;
-      printf("id:[%zu] --- address:[%s]\n", id, address.c_str());
+      printf("id:[%zu] --- address:[%08jx]\n", id, address);
   }
   printf("******* BRANCH TABLE END *******\n");
 
@@ -271,7 +288,7 @@ print_cfg(INT32 code, void *v){
       id = j->first;
       address = j->second.first;
       flag = j->second.second;
-      printf("id:[%zu] --- address:[%s] --- flag[%zu]\n", id, address.c_str(), flag);
+      printf("id:[%zu] --- address:[%08jx] --- flag[%zu]\n", id, address, flag);
   }
   printf("******* TARGET TABLE END *******\n");
 }
