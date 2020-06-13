@@ -292,10 +292,10 @@ main(int argc, char *argv[])
   }
 
   get_symbol_table(argv[6]);
-  if(get_scfg("cfg/printf.txt")) return 1;
+  if(get_scfg(argv[8])) return 1;
 
-  entry_address = AddrintFromString("400586");
-  exit_address = AddrintFromString("4005db");
+  entry_address = AddrintFromString(argv[9]);
+  exit_address = AddrintFromString(argv[10]);
 
   // IMG_AddInstrumentFunction(parse_funcsyms, NULL);
   INS_AddInstrumentFunction(instrument_insn, NULL);

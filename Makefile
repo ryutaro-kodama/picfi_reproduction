@@ -45,21 +45,25 @@ cfg_printf: specimen/bin/return_address_violation_printf
 	./$(MAKE_CFG) $^ map/printf.map 0x400598 0x4005db cfg/printf.txt
 
 test_printf: profiler/obj-intel64/profiler.so
-	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so -- $(SPE_TAR_DIR)return_address_violation_printf $(ARG)
+	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so \
+	-- $(SPE_TAR_DIR)return_address_violation_printf $(ARG) cfg/printf.txt 400586 4005db
 
 test_printf_violate: profiler/obj-intel64/profiler.so
-	printf "$(PAD72)\xb0\x05\x40" | $(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so -- $(SPE_TAR_DIR)return_address_violation_printf $(ARG)
+	printf "$(PAD72)\xb0\x05\x40" \
+	| $(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so \
+	-- $(SPE_TAR_DIR)return_address_violation_printf $(ARG) cfg/printf.txt 400586 4005db
 ################################################################################
 
 ####################### for testing overwrite specimen #########################
-return_address_violation_overwrite: specimen/return_address_violation_overwrite.c
-	gcc -Wall -g -o $(SPE_TAR_DIR)$@ $(SPE_DIR)$@.c $(FNO)
+# return_address_violation_overwrite: specimen/return_address_violation_overwrite.c
+# 	gcc -Wall -g -o $(SPE_TAR_DIR)$@ $(SPE_DIR)$@.c $(FNO)
 
 cfg_overwrite: specimen/bin/return_address_violation_overwrite
 	./$(MAKE_CFG) $^ map/overwrite.map 0x4006e7 0x40073e cfg/overwrite.txt
 
-test_overwrite: profiler/obj-intel64/profiler.so
-	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so overwrite.map -- $(SPE_TAR_DIR)return_address_violation_overwrite $(ARG)
+test_overwrite_violate: profiler/obj-intel64/profiler.so
+	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so \
+	-- $(SPE_TAR_DIR)return_address_violation_overwrite $(ARG) cfg/overwrite.txt 4006a6 40073e
 ################################################################################
 
 clean:
