@@ -90,9 +90,16 @@ int emulation(triton::API &api, triton::arch::registers_e &ip, Section *sec,
     insn.setOpcode(sec->bytes+(pc-sec->vma), len);
     insn.setAddress(pc);
 
-    // jump先がライブラリなどだったら保留
     if(strncmp(mnemonic, "call", 4)==0){
-      uint64_t call_target = strtoul(operands, NULL, 0);
+      // Check operand is a register. (This means 'indirect call')
+      triton::arch::registers_e regnum = get_triton_regnum(sym);
+      if(regnum == triton::arch::ID_REG_INVALID) {
+        uint64_t call_target = strtoul(operands, NULL, 0);
+      } else {
+        uint64_t call_target = (uint64_t)api.getConcreteRegisterValue(api.getRegister(regnum));
+      }
+
+      // If call target is not in .text section, pass and pc point next address.
       if(!sec->contains(call_target)){
         pc = insn.getNextAddress();
         cf_flag = false;
@@ -102,6 +109,7 @@ int emulation(triton::API &api, triton::arch::registers_e &ip, Section *sec,
 
     api.processing(insn);
 
+    // If flag is true, this pc is a target address.
     if(cf_flag){
       if(is_new_cf(branch_address, pc)){
         cfg.insert(std::make_pair(branch_address, pc));
@@ -109,9 +117,9 @@ int emulation(triton::API &api, triton::arch::registers_e &ip, Section *sec,
       cf_flag = false;
     }
 
+    // if this instruction is 'ret' or 'call', this address is a branch address.
     if(insn.isControlFlow()){
       if (strncmp (mnemonic, "ret", 3)==0 || strncmp (mnemonic, "call", 4)==0) {
-        // printf("来ました[%s][%llx]\n", mnemonic, pc);
         branch_address = pc;
         cf_flag = true;
       }
