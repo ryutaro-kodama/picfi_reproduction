@@ -66,6 +66,29 @@ test_overwrite_violate: profiler/obj-intel64/profiler.so
 	-- $(SPE_TAR_DIR)return_address_violation_overwrite $(ARG) cfg/overwrite.txt 4006a6 40073e
 ################################################################################
 
+############ for testing function_address_violation specimen ###################
+#function_address_violation: specimen/function_address_violation.c
+#	gcc -Wall -g -o $(SPE_TAR_DIR)$@ $(SPE_DIR)$@.c $(FNO)
+
+function_address_violation_compile: specimen/function_address_violation.c
+	gcc -Wall -g -S $^ -o $(SPE_DIR)function_address_violation.s $(FNO)
+
+function_address_violation_assemple: specimen/function_address_violation.s
+	gcc -Wall -g $^ -o $(SPE_TAR_DIR)function_address_violation $(FNO)
+
+#cfg_printf: specimen/bin/return_address_violation_printf
+#	./$(MAKE_CFG) $^ map/printf.map 0x400598 0x4005db cfg/printf.txt
+
+#test_printf: profiler/obj-intel64/profiler.so
+#	$(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so \
+	-- $(SPE_TAR_DIR)return_address_violation_printf $(ARG) cfg/printf.txt 400586 4005db
+
+#test_printf_violate: profiler/obj-intel64/profiler.so
+#	printf "$(PAD72)\xb0\x05\x40" \
+	| $(PIN_ROOT)/pin -t ./profiler/obj-intel64/profiler.so \
+	-- $(SPE_TAR_DIR)return_address_violation_printf $(ARG) cfg/printf.txt 400586 4005db
+################################################################################
+
 clean:
 	cd profiler && rm -rf obj-intel64
 
