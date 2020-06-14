@@ -15,6 +15,9 @@
 #include <errno.h>
 #include <sstream>
 #include <iostream>
+// #include <iostream>
+// #include <ext/stdio_filebuf.h>
+// #include <cstdlib>
 
 KNOB<bool> PrintTables(KNOB_MODE_WRITEONCE, "pintool", "q", "0", "Print tables");
 
@@ -151,42 +154,24 @@ print_usage()
 }
 
 static void
-get_symbol_table(char* binaryname){
-    int fd[2], backup_stdin;
-    // std::string binaryname = "./bin/spe_no_ssp2";
+get_symbol_table(std::string binaryname){
+  std::string cmd = "nm " + binaryname;
+  FILE *fp = popen(cmd.c_str(), "r");
 
-    pipe(fd);
+  char c_buf[128];
+  while(fgets(c_buf, 128, fp)){
+    std::string buf = c_buf;
+    std::string address, label;
+    std::stringstream ss;
+    ss << buf;
 
-    pid_t pid = fork();
-    if(pid == -1){
-        perror("fork");
-        exit(errno);
-    } else if(pid==0){
-        close(fd[0]);dup2(fd[1], 1);close(fd[1]);
-        execlp("nm","nm", binaryname, NULL);
-        // execlp("nm","nm", binaryname.c_str(), NULL);
-    }
+    std::getline(ss, address, ' ');
+    if(address.size()<=1) continue; //addressが明示されていないラベルの場合
+    std::getline(ss, label, ' ');
+    std::getline(ss, label, '\n');
 
-    backup_stdin = dup(0);
-    close(fd[1]);dup2(fd[0], 0);close(fd[0]);
-
-    std::string buf, address, label;
-    while(std::getline(std::cin, buf)){
-        // printf("[%s]\n",buf.c_str());
-        std::stringstream ss;
-        ss << buf;
-
-        getline(ss, address, ' ');
-        if(address.size()<=1) continue; //addressが明示されていないラベルの場合
-        getline(ss, label, ' ');
-        getline(ss, label, ' ');
-
-        symbol_table[AddrintFromString(address)] = label;
-    }
-    // wait(NULL);
-
-    dup2(backup_stdin, 0);
-    close(backup_stdin);
+    symbol_table[AddrintFromString(address)] = label;
+  }
 }
 
 static int
@@ -217,17 +202,17 @@ get_scfg(const char* cfg_filename){
 
 static void
 print_table(INT32 code, void *v){
-    ADDRINT address;
-    std::string label;
-    std::map<ADDRINT, std::string>::iterator i;
+  ADDRINT address;
+  std::string label;
+  std::map<ADDRINT, std::string>::iterator i;
 
-    printf("******* SYMBOL TABLE *******\n");
-    for(i = symbol_table.begin(); i != symbol_table.end(); i++) {
-        address = i->first;
-        label = i->second;
-        printf("address:[%08jx] -> label:[%s]\n", address, label.c_str());
-    }
-    printf("******* SYMBOL TABLE END *******\n");
+  printf("******* SYMBOL TABLE *******\n");
+  for(i = symbol_table.begin(); i != symbol_table.end(); i++) {
+    address = i->first;
+    label = i->second;
+    printf("address:[%08jx] -> label:[%s]\n", address, label.c_str());
+  }
+  printf("******* SYMBOL TABLE END *******\n");
 }
 
 static void
@@ -272,8 +257,8 @@ main(int argc, char *argv[])
 
   INS_AddInstrumentFunction(instrument_insn, NULL);
 
-  if(PrintTables.Value()){
     PIN_AddFiniFunction(print_table, NULL);
+  if(PrintTables.Value()){
     PIN_AddFiniFunction(print_cfg, NULL);
   }
 
