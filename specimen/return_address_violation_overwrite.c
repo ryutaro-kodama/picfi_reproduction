@@ -6,7 +6,14 @@ void foo(void);
 
 // -fno-stack-protectorオプションでコンパイル
 int main(int argc, char *argv[]){
-    if(argc==1){
+    if(argc<2){
+        fprintf(stderr, "引数の数が足りません\n");
+        exit(1);
+    }
+
+    char *flag = argv[1];
+
+    if(strcmp(flag, "root")==0){
         printf("this is 'if' branch\n");
         foo();
         printf("this is 'if' branch\n");
@@ -19,25 +26,16 @@ int main(int argc, char *argv[]){
 
 
 void foo(){
-    char str[32];
-    char copy[16];
+    char str[8];
     char *tmp = str;
     printf("function 'foo' is called\n");
 
-    for(int i=0; i<56; i++)tmp++;
-    for(int i=0; i<16; i++){
-        copy[i] = *tmp;
-        tmp++;
-    }
-
     scanf("%s", str); // user input
 
-    tmp = str;
-    for(int i=0; i<56; i++)tmp++;
-    for(int i=0; i<16; i++){
-        *tmp = copy[i];
-        tmp++;
-    }
+    for(int i=0; i<40; i++)tmp++;
+    *tmp++ = 0x13;
+    *tmp++ = 0x07;
+    *tmp++ = 0x40;
 
     printf("function 'foo' is end\n");
 }

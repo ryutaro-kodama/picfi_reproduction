@@ -6,7 +6,9 @@ void foo(void);
 
 // -fno-stack-protectorオプションでコンパイル
 int main(int argc, char *argv[]){
-    if(argc==1){
+    int num = argc;
+
+    if(num==1){
         printf("this is 'if' branch\n");
         foo();
         printf("this is 'if' branch\n");
