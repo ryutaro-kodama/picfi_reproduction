@@ -14,16 +14,23 @@
 #include <sstream>
 #include <iostream>
 
+// For checking tables' data.
 KNOB<bool> PrintTables(KNOB_MODE_WRITEONCE, "pintool", "q", "0", "Print tables");
 
+// This table relates address to label.
 std::map<ADDRINT, std::string> symbol_table;
-std::map<size_t, ADDRINT> branch_table;
-std::map<size_t, std::pair<ADDRINT, size_t> > target_table;
+
+// These tables means static CFG.
+std::map<size_t, ADDRINT> branch_table;     // <id, branch_address>
+std::map<size_t, std::pair<ADDRINT, size_t> > target_table;   // <id, (target_address, flag)>
 
 static ADDRINT entry_address;
 static ADDRINT exit_address;
+// If you have passed 'entry_address' and haven't 'exit_address',
+// 'instrument_flag' is true and you instrument.
 static bool instrument_flag = false;
 
+// Change the flag(0 to 1) in the 'target_table'.
 static void
 activate_address(ADDRINT target_address){
   std::map<size_t, std::pair<ADDRINT, size_t> >::iterator i;
@@ -37,12 +44,16 @@ activate_return_address(ADDRINT return_address){
   activate_address(return_address);
 }
 
+// Get function's entry address from 'instruction_address'(current program counter).
 static void
 activate_function_address(ADDRINT instruction_address){
+  // Get label '__picfi_' related to 'instruction_address'
   std::string label = symbol_table[instruction_address];
 
+  // Remove prefix '__picfi_' . You can get function's name(label).
   std::string function_name = label.substr(8);
 
+  // Find function's address from its name.
   std::map<ADDRINT, std::string>::iterator i;
   for(i = symbol_table.begin(); i != symbol_table.end(); i++) {
     if(i->second==function_name){
@@ -56,10 +67,14 @@ static void
 check_activated_address(ADDRINT branch_address, ADDRINT target_address){
   std::map<size_t, ADDRINT>::iterator i;
   std::vector<size_t> tmp_id;
+
+  // Get id related to 'branch_address' from 'branch_table', and push to 'tmp_id'.
   for(i=branch_table.begin(); i!=branch_table.end(); i++){
     if(i->second==branch_address) tmp_id.push_back(i->first);
   }
 
+  // For each id in 'tmp_id', check whether the target address is equal to 'target_address' and flag is 1.
+  // If there is an all matching data, this control flow is correct one.
   std::vector<size_t>::iterator j;
   for(j=tmp_id.begin(); j!=tmp_id.end(); j++){
     if(target_table[*j].first==target_address && target_table[*j].second==1){
@@ -67,9 +82,9 @@ check_activated_address(ADDRINT branch_address, ADDRINT target_address){
     }
   }
 
-  // End roop means this ControlFrow isn't in table.
-  fprintf(stderr, "activateされてないですね\n");
-  fprintf(stderr, "0x%08jx -> 0x%08jx\n", branch_address, target_address);
+  // Exit of roop means this control flow is incorrect one.
+  fprintf(stderr, "!!!!! violation detected !!!!!\n");
+  // fprintf(stderr, "0x%08jx -> 0x%08jx\n", branch_address, target_address);
   exit(1);
 }
 
@@ -78,6 +93,7 @@ isIndirectCall(INS ins){
   return INS_IsCall(ins) && INS_IsIndirectBranchOrCall(ins);
 }
 
+// Check whether current program counter is labeld "__picfi_*".
 static bool
 isAddressLabeledPicfi(ADDRINT instruction_address){
   std::map<ADDRINT, std::string>::iterator i;
@@ -155,6 +171,7 @@ get_symbol_table(std::string binaryname){
   if(fp==NULL) return 1;
 
   char c_buf[128];
+  // Read from 'nm' command's outputs per line
   while(fgets(c_buf, 128, fp)){
     std::string buf = c_buf;
     std::string address, label;
@@ -162,10 +179,11 @@ get_symbol_table(std::string binaryname){
     ss << buf;
 
     std::getline(ss, address, ' ');
-    if(address.size()<=1) continue; //addressが明示されていないラベルの場合
+    if(address.size()<=1) continue; // For labels which don't have address.
     std::getline(ss, label, ' ');
     std::getline(ss, label, '\n');
 
+    // Add address and label.
     symbol_table[AddrintFromString(address)] = label;
   }
 
@@ -182,7 +200,7 @@ get_scfg(const char* cfg_filename){
   reading_file.open(cfg_filename, std::ios::in);
   if(reading_file.fail()) return 1;
 
-  // Read from cfg-file per line
+  // Read from 'cfg-file' per line
   std::string reading_line_buffer;
   while( std::getline(reading_file, reading_line_buffer)){
     std::string branch_address, target_address;
@@ -200,6 +218,7 @@ get_scfg(const char* cfg_filename){
   return 0;
 }
 
+// For confirming 'symbol_table' data.
 static void
 print_table(INT32 code, void *v){
   ADDRINT address;
@@ -215,6 +234,7 @@ print_table(INT32 code, void *v){
   printf("******* SYMBOL TABLE END *******\n");
 }
 
+// For confirming 'branch_table' and 'target_table' data.
 static void
 print_cfg(INT32 code, void *v){
   std::map<size_t, ADDRINT>::iterator i;
@@ -267,4 +287,3 @@ main(int argc, char *argv[])
 
   return 0;
 }
-
