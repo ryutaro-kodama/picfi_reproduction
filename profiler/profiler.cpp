@@ -16,8 +16,7 @@
 #include <sstream>
 #include <iostream>
 
-
-// std::vector<ADDRINT> return_address_array;
+KNOB<bool> PrintTables(KNOB_MODE_WRITEONCE, "pintool", "q", "0", "Print tables");
 
 std::map<ADDRINT, std::string> symbol_table;
 std::map<size_t, ADDRINT> branch_table;
@@ -27,68 +26,36 @@ static ADDRINT entry_address;
 static ADDRINT exit_address;
 static bool instrument_flag = false;
 
-// void printMovingAddress(ADDRINT src_addr, ADDRINT target_address){
-//   fprintf(stderr, "0x%08jx -> 0x%08jx\n", src_addr, target_address);
-// }
-
-/*****************************************************************************
- *                             Analysis functions                            *
- *****************************************************************************/
-
-// static void
-// sample_call(ADDRINT IARG_INST_PTR, ADDRINT IARG_RETURN_IP, ADDRINT IARG_BRANCH_TARGET_ADDR){
-//   printf("[0x%08jx]で[0x%08jx]を[0x%08jx]のrtnで登録\n",
-//           IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_RETURN_IP);
-// }
-
 static void
 activate_address(ADDRINT target_address){
-  // return_address_array.push_back(target_address);
-
   std::map<size_t, std::pair<ADDRINT, size_t> >::iterator i;
   for(i=target_table.begin(); i!=target_table.end(); i++){
     if(i->second.first==target_address) i->second.second=1;
   }
-
-
 }
 
 static void
-activate_return_address(ADDRINT IARG_RETURN_IP){
-  activate_address(IARG_RETURN_IP);
+activate_return_address(ADDRINT return_address){
+  activate_address(return_address);
 }
 
-// static void
-// activatefunction_address(ADDRINT IARG_BRANCH_TARGET_ADDR){
-//   if(patchstub_at_address!=IARG_BRANCH_TARGET_ADDR) return;
-//
-//   slackでもらったpatchstub_atの処理により、target_addressを引き抜く
-//   (target_address = Inderect Callされる関数のアドレス)
-//
+static void
+activate_function_address(ADDRINT instruction_address){
+  std::string label = symbol_table[instruction_address];
 
-//   activate_address(target_address);
-// }
+  std::string function_name = label.substr(8);
+
+  std::map<ADDRINT, std::string>::iterator i;
+  for(i = symbol_table.begin(); i != symbol_table.end(); i++) {
+    if(i->second==function_name){
+      activate_address(i->first);
+      return;
+    }
+  }
+}
 
 static void
 check_activated_address(ADDRINT branch_address, ADDRINT target_address){
-  // std::vector<ADDRINT>::iterator itr;
-  // int flag=0;
-
-  // // search
-  // for(itr=return_address_array.begin(); itr!=return_address_array.end(); itr++){
-  //   if(*itr==target_address){
-  //     flag=1;
-  //     break;
-  //   }
-  // }
-
-  // if(flag== 1){
-  //   // 正しいreturn先に飛んでいる
-  // } else {
-  //   // 間違ったreturn先に飛んでいる
-  //   fprintf(stderr, "間違ったreturn先ですね\n");
-  // }
-
   std::map<size_t, ADDRINT>::iterator i;
   std::vector<size_t> tmp_id;
   for(i=branch_table.begin(); i!=branch_table.end(); i++){
@@ -102,8 +69,7 @@ check_activated_address(ADDRINT branch_address, ADDRINT target_address){
     }
   }
 
-  // // End roop means this ControlFrow isn't in table.
-  // detect_violation();
+  // End roop means this ControlFrow isn't in table.
   fprintf(stderr, "activateされてないですね\n");
   fprintf(stderr, "0x%08jx -> 0x%08jx\n", branch_address, target_address);
   exit(1);
@@ -112,6 +78,20 @@ check_activated_address(ADDRINT branch_address, ADDRINT target_address){
 static bool
 isIndirectCall(INS ins){
   return INS_IsCall(ins) && INS_IsIndirectBranchOrCall(ins);
+}
+
+static bool
+isAddressLabeledPicfi(ADDRINT instruction_address){
+  std::map<ADDRINT, std::string>::iterator i;
+
+  for(i = symbol_table.begin(); i != symbol_table.end(); i++) {
+    if(i->first==instruction_address){
+      if(strncmp(i->second.c_str(), "__picfi_", 8)==0){
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /*****************************************************************************
@@ -131,11 +111,20 @@ instrument_insn(INS ins, void *v)
 
   if(instrument_flag==false) return;
 
-  if(INS_IsCall(ins)) {
+  if( INS_IsCall(ins) ) {
     // Activate "return_address".
     INS_InsertCall(
       ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)activate_return_address,
       IARG_RETURN_IP,
+      IARG_END
+    );
+  }
+
+  if( isAddressLabeledPicfi(instruction_address) ){
+    // Activate "function_address".
+    INS_InsertCall(
+      ins, IPOINT_BEFORE, (AFUNPTR)activate_function_address,
+      IARG_INST_PTR,
       IARG_END
     );
   }
@@ -226,22 +215,6 @@ get_scfg(const char* cfg_filename){
   return 0;
 }
 
-// static void
-// print_results(INT32 code, void *v)
-// {
-//   UINT32 id;
-//   ADDRINT return_addr;
-//   std::map<UINT32, ADDRINT>::iterator j;
-
-//   printf("******* CONTROL TRANSFERS *******\n");
-//   for(j = ecfg.begin(); j != ecfg.end(); j++) {
-//     id = j->first;
-//     return_addr = j->second;
-//     printf("FunctionID:%d -> ReturnAddress:[0x%08jx]\n", 
-//             id, return_address);
-//   }
-// }
-
 static void
 print_table(INT32 code, void *v){
     ADDRINT address;
@@ -297,18 +270,16 @@ main(int argc, char *argv[])
   entry_address = AddrintFromString(argv[9]);
   exit_address = AddrintFromString(argv[10]);
 
-  // IMG_AddInstrumentFunction(parse_funcsyms, NULL);
   INS_AddInstrumentFunction(instrument_insn, NULL);
-  // TRACE_AddInstrumentFunction(instrument_trace, NULL);
-  // if(ProfileSyscalls.Value()) {
-  //   PIN_AddSyscallEntryFunction(log_syscall, NULL);
-  // }
-  PIN_AddFiniFunction(print_table, NULL);
-  PIN_AddFiniFunction(print_cfg, NULL);
+
+  if(PrintTables.Value()){
+    PIN_AddFiniFunction(print_table, NULL);
+    PIN_AddFiniFunction(print_cfg, NULL);
+  }
 
   /* Never returns */
   PIN_StartProgram();
-    
+
   return 0;
 }
 
