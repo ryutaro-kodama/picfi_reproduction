@@ -8,16 +8,11 @@
 #include <vector>
 #include <fstream>
 
-// symbol_table作成関連
 #include <unistd.h>
-// #include <sys/wait.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <sstream>
 #include <iostream>
-// #include <iostream>
-// #include <ext/stdio_filebuf.h>
-// #include <cstdlib>
 
 KNOB<bool> PrintTables(KNOB_MODE_WRITEONCE, "pintool", "q", "0", "Print tables");
 
@@ -153,10 +148,11 @@ print_usage()
   fprintf(stderr, "%s\n", help.c_str());
 }
 
-static void
+static int
 get_symbol_table(std::string binaryname){
   std::string cmd = "nm " + binaryname;
   FILE *fp = popen(cmd.c_str(), "r");
+  if(fp==NULL) return 1;
 
   char c_buf[128];
   while(fgets(c_buf, 128, fp)){
@@ -172,6 +168,10 @@ get_symbol_table(std::string binaryname){
 
     symbol_table[AddrintFromString(address)] = label;
   }
+
+  if(pclose(fp)==-1) return 1;
+
+  return 0;
 }
 
 static int
@@ -249,7 +249,7 @@ main(int argc, char *argv[])
     return 1;
   }
 
-  get_symbol_table(argv[6]);
+  if(get_symbol_table(argv[6])) return 1;
   if(get_scfg(argv[8])) return 1;
 
   entry_address = AddrintFromString(argv[9]);
@@ -257,8 +257,8 @@ main(int argc, char *argv[])
 
   INS_AddInstrumentFunction(instrument_insn, NULL);
 
-    PIN_AddFiniFunction(print_table, NULL);
   if(PrintTables.Value()){
+    PIN_AddFiniFunction(print_table, NULL);
     PIN_AddFiniFunction(print_cfg, NULL);
   }
 
