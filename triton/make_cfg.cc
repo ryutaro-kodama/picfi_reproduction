@@ -99,7 +99,7 @@ int emulation(triton::API &api, triton::arch::registers_e &ip, Section *sec,
         uint64_t call_target = (uint64_t)api.getConcreteRegisterValue(api.getRegister(regnum));
       }
 
-      // If call target is not in .text section, pass and pc point next address.
+      // If call target is not in .text section, pass and point program counter to next address.
       if(!sec->contains(call_target)){
         pc = insn.getNextAddress();
         cf_flag = false;
@@ -140,31 +140,30 @@ void set_new_input(triton::API &api, Section *sec, int base)
   triton::ast::AstContext &ast = api.getAstContext();
   triton::ast::AbstractNode *constraint_list = ast.equal(ast.bvtrue(), ast.bvtrue());
 
-  std::vector<bool> bool_list;
-
   const std::vector<triton::engines::symbolic::PathConstraint> &path_constraints = api.getPathConstraints();
   int height = -1;
   for(auto &pc: path_constraints) {
     if(!pc.isMultipleBranches()) continue;
+
     height++;
+    // If current 'height' is less than 'base', you don't caluclate new inputs, so you pass.
     if(height < base) continue;
-    triton::ast::AbstractNode *true_constraint = ast.equal(ast.bvtrue(), ast.bvtrue());
+
+    triton::ast::AbstractNode *current_constraint = ast.equal(ast.bvtrue(), ast.bvtrue());
     for(auto &branch_constraint: pc.getBranchConstraints()) {
       bool flag         = std::get<0>(branch_constraint);
       triton::ast::AbstractNode *constraint = std::get<3>(branch_constraint);
 
-      bool_list.push_back(flag);
-
       if(flag) {
-        // 現在通るやつ->そのまま
-        true_constraint = constraint;
+        // If a constraint is passed by courrent input, save (as 'current_constraint').
+        current_constraint = constraint;
       } else {
-        // 現在通らないやつ->そのinputを求める
+        // If a constraint is not passed by courrent input, calculate inputs to pass the constraint.
         triton::ast::AbstractNode *current_constraint_list = ast.land(constraint_list, constraint);
 
         std::map<triton::arch::registers_e, uint64_t> new_input_reg;
         std::map<uint64_t, uint8_t> new_input_mem;
-        // triton::arch::registers_e triton_regnum;
+
         for(auto &kv: api.getModel(current_constraint_list)) {
           printf("      SymVar %u (%s) = 0x%jx\n",
                   kv.first,
@@ -181,15 +180,17 @@ void set_new_input(triton::API &api, Section *sec, int base)
           }
           // printf("[%d]番目スタート[0x%jx]の値を追加\n", height+1, (uint64_t)kv.second.getValue());
         }
+        // Add new inputs and a base.
         input_regs.push_back(new_input_reg);
         input_mems.push_back(new_input_mem);
         calc_model_bases.push_back(height+1);
       }
     }
-    constraint_list = ast.land(constraint_list, true_constraint);
+    constraint_list = ast.land(constraint_list, current_constraint);
   }
 }
 
+// For confirming 'cfg' data.
 void print_cfg(){
     uint64_t branch_address, target_address;
     std::multimap<uint64_t, uint64_t>::iterator i;
@@ -203,6 +204,7 @@ void print_cfg(){
     printf("******* CFG END *******\n");
 }
 
+// Export 'cfg' to a file.
 void export_cfg(const char* filename){
   std::ofstream writing_file;
   writing_file.open(filename, std::ios::out);
@@ -256,7 +258,7 @@ main(int argc, char *argv[])
     emulation(api, ip, sec, strtoul(argv[3], NULL, 0), strtoul(argv[4], NULL, 0));
 
     set_new_input(api, sec, calc_model_bases[input_index]);
-    print_cfg();
+    print_cfg();  // For check.
 
     input_index++;
   }
